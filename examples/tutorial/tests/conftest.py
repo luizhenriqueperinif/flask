@@ -1,47 +1,76 @@
+import io
 import os
 import tempfile
+from datetime import datetime
 
 import pytest
+from PIL import Image
+from werkzeug.security import generate_password_hash
 
 from flaskr import create_app
-from flaskr.db import get_db
-from flaskr.db import init_db
-
-# read in SQL for populating test data
-with open(os.path.join(os.path.dirname(__file__), "data.sql"), "rb") as f:
-    _data_sql = f.read().decode("utf8")
+from flaskr.models import Post
+from flaskr.models import User
+from flaskr.models import db
+from flaskr.models import init_db
 
 
 @pytest.fixture
 def app():
     """Create and configure a new app instance for each test."""
-    # create a temporary file to isolate the database for each test
     db_fd, db_path = tempfile.mkstemp()
-    # create the app with common test config
-    app = create_app({"TESTING": True, "DATABASE": db_path})
+    upload_dir = tempfile.mkdtemp()
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///" + db_path,
+            "UPLOAD_FOLDER": upload_dir,
+        }
+    )
 
-    # create the database and load test data
     with app.app_context():
         init_db()
-        get_db().executescript(_data_sql)
+        test = User(username="test", password=generate_password_hash("test"))
+        other = User(username="other", password=generate_password_hash("other"))
+        db.session.add_all([test, other])
+        db.session.add(
+            Post(
+                title="test title",
+                body="test\nbody",
+                author=test,
+                created=datetime(2018, 1, 1),
+            )
+        )
+        db.session.commit()
 
     yield app
 
-    # close and remove the temporary database
+    with app.app_context():
+        db.engine.dispose()
     os.close(db_fd)
     os.unlink(db_path)
 
 
 @pytest.fixture
 def client(app):
-    """A test client for the app."""
     return app.test_client()
 
 
 @pytest.fixture
 def runner(app):
-    """A test runner for the app's Click commands."""
     return app.test_cli_runner()
+
+
+@pytest.fixture
+def png_bytes():
+    """Gera uma imagem PNG válida em memória."""
+
+    def _make():
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10), "red").save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+
+    return _make
 
 
 class AuthActions:

@@ -9,8 +9,13 @@ def create_app(test_config=None):
     app.config.from_mapping(
         # a default secret that should be overridden by instance config
         SECRET_KEY="dev",
-        # store the database in the instance folder
-        DATABASE=os.path.join(app.instance_path, "flaskr.sqlite"),
+        # banco SQLite na pasta instance, acessado via SQLAlchemy
+        SQLALCHEMY_DATABASE_URI="sqlite:///"
+        + os.path.join(app.instance_path, "flaskr.sqlite"),
+        # pasta onde avatares e imagens dos posts são salvos
+        UPLOAD_FOLDER=os.path.join(app.root_path, "static", "uploads"),
+        # limite de 5 MB por requisição
+        MAX_CONTENT_LENGTH=5 * 1024 * 1024,
     )
 
     if test_config is None:
@@ -20,29 +25,29 @@ def create_app(test_config=None):
         # load the test config if passed in
         app.config.update(test_config)
 
-    # ensure the instance folder exists
+    # ensure the instance and upload folders exist
     os.makedirs(app.instance_path, exist_ok=True)
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
     @app.route("/hello")
     def hello():
         return "Hello, World!"
 
-    # register the database commands
-    from . import db
+    # inicializa o SQLAlchemy e o comando "flask init-db"
+    from . import models
 
-    db.init_app(app)
+    models.init_app(app)
 
     # apply the blueprints to the app
     from . import auth
     from . import blog
+    from . import calculos
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(blog.bp)
+    app.register_blueprint(calculos.bp)
 
     # make url_for('index') == url_for('blog.index')
-    # in another app, you might define a separate main index here with
-    # app.route, while giving the blog blueprint a url_prefix, but for
-    # the tutorial the blog will be the main index
     app.add_url_rule("/", endpoint="index")
 
     return app

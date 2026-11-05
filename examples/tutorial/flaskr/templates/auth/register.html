@@ -1,15 +1,39 @@
 {% extends 'base.html' %}
 
 {% block header %}
-  <h1>{% block title %}Register{% endblock %}</h1>
+  <h1 class="h3 mb-0">{% block title %}Cadastro{% endblock %}</h1>
 {% endblock %}
 
 {% block content %}
-  <form method="post">
-    <label for="username">Username</label>
-    <input name="username" id="username" required>
-    <label for="password">Password</label>
-    <input type="password" name="password" id="password" required>
-    <input type="submit" value="Register">
-  </form>
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="username" class="form-label">Usuário</label>
+            <input name="username" id="username" class="form-control"
+                   value="{{ request.form['username'] }}" required>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Senha</label>
+            <input type="password" name="password" id="password" class="form-control" required>
+          </div>
+          <div class="mb-4">
+            <label for="avatar" class="form-label">Foto de perfil <span class="text-muted">(opcional)</span></label>
+            <input type="file" name="avatar" id="avatar" class="form-control"
+                   accept=".png,.jpg,.jpeg,.gif,.webp">
+            <div class="form-text">PNG, JPG, GIF ou WEBP, até 5 MB.</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-person-plus"></i> Cadastrar
+          </button>
+        </form>
+      </div>
+    </div>
+    <p class="text-center mt-3 small">
+      Já tem conta? <a href="{{ url_for('auth.login') }}">Entrar</a>
+    </p>
+  </div>
+</div>
 {% endblock %}

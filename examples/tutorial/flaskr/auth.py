@@ -11,7 +11,10 @@ from flask import url_for
 from werkzeug.security import check_password_hash
 from werkzeug.security import generate_password_hash
 
-from .db import get_db
+from .models import User
+from .models import db
+from .uploads import UploadError
+from .uploads import save_image
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -22,6 +25,7 @@ def login_required(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
         if g.user is None:
+            flash("Faça login para continuar.", "warning")
             return redirect(url_for("auth.login"))
 
         return view(**kwargs)
@@ -34,49 +38,45 @@ def load_logged_in_user():
     """If a user id is stored in the session, load the user object from
     the database into ``g.user``."""
     user_id = session.get("user_id")
-
-    if user_id is None:
-        g.user = None
-    else:
-        g.user = (
-            get_db().execute("SELECT * FROM user WHERE id = ?", (user_id,)).fetchone()
-        )
+    g.user = db.session.get(User, user_id) if user_id is not None else None
 
 
 @bp.route("/register", methods=("GET", "POST"))
 def register():
-    """Register a new user.
-
-    Validates that the username is not already taken. Hashes the
-    password for security.
-    """
+    """Cadastra um novo usuário, com foto de perfil opcional."""
     if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        db = get_db()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
         error = None
 
         if not username:
-            error = "Username is required."
+            error = "O nome de usuário é obrigatório."
         elif not password:
-            error = "Password is required."
+            error = "A senha é obrigatória."
+        elif db.session.execute(
+            db.select(User).filter_by(username=username)
+        ).scalar_one_or_none():
+            error = f"O usuário {username} já está cadastrado."
 
+        avatar = None
         if error is None:
             try:
-                db.execute(
-                    "INSERT INTO user (username, password) VALUES (?, ?)",
-                    (username, generate_password_hash(password)),
-                )
-                db.commit()
-            except db.IntegrityError:
-                # The username was already taken, which caused the
-                # commit to fail. Show a validation error.
-                error = f"User {username} is already registered."
-            else:
-                # Success, go to the login page.
-                return redirect(url_for("auth.login"))
+                avatar = save_image(request.files.get("avatar"))
+            except UploadError as e:
+                error = str(e)
 
-        flash(error)
+        if error is None:
+            user = User(
+                username=username,
+                password=generate_password_hash(password),
+                avatar=avatar,
+            )
+            db.session.add(user)
+            db.session.commit()
+            flash("Cadastro realizado! Agora faça login.", "success")
+            return redirect(url_for("auth.login"))
+
+        flash(error, "danger")
 
     return render_template("auth/register.html")
 
@@ -85,26 +85,25 @@ def register():
 def login():
     """Log in a registered user by adding the user id to the session."""
     if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        db = get_db()
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
         error = None
-        user = db.execute(
-            "SELECT * FROM user WHERE username = ?", (username,)
-        ).fetchone()
+        user = db.session.execute(
+            db.select(User).filter_by(username=username)
+        ).scalar_one_or_none()
 
         if user is None:
-            error = "Incorrect username."
-        elif not check_password_hash(user["password"], password):
-            error = "Incorrect password."
+            error = "Usuário incorreto."
+        elif not check_password_hash(user.password, password):
+            error = "Senha incorreta."
 
         if error is None:
-            # store the user id in a new session and return to the index
             session.clear()
-            session["user_id"] = user["id"]
+            session["user_id"] = user.id
+            flash(f"Bem-vindo(a), {user.username}!", "success")
             return redirect(url_for("index"))
 
-        flash(error)
+        flash(error, "danger")
 
     return render_template("auth/login.html")
 

@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% macro brl(valor) -%}
+  R$ {{ "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".") }}
+{%- endmacro %}
+
+{% block header %}
+  <div>
+    <h1 class="h3 mb-0">{% block title %}Cálculos Financeiros{% endblock %}</h1>
+    <p class="text-muted mb-0 small">Os cálculos são feitos em memória. Nenhum dado é salvo.</p>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  {# ---------- IRPF ---------- #}
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm h-100 {% if aba == 'irpf' and request.method == 'POST' %}border-primary{% endif %}">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-bank"></i> Cálculo de IRPF (mensal)
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="tipo" value="irpf">
+          <label for="salario_bruto" class="form-label">Salário bruto</label>
+          <div class="input-group mb-3">
+            <span class="input-group-text">R$</span>
+            <input name="salario_bruto" id="salario_bruto" class="form-control"
+                   inputmode="decimal" placeholder="Ex.: 6.000,00"
+                   value="{{ request.form['salario_bruto'] if aba == 'irpf' }}" required>
+          </div>
+          <button class="btn btn-primary w-100" type="submit">Calcular IRPF</button>
+        </form>
+
+        {% if erro_irpf %}
+          <div class="alert alert-danger mt-3 mb-0">{{ erro_irpf }}</div>
+        {% endif %}
+
+        {% if resultado_irpf %}
+          <ul class="list-group list-group-flush mt-3">
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Base de cálculo <small class="text-muted">(− desconto simplificado)</small></span>
+              <span>{{ brl(resultado_irpf.base_calculo) }}</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Alíquota da faixa</span>
+              <span>{{ "%.1f"|format(resultado_irpf.aliquota) }}%</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Imposto pela tabela</span>
+              <span>{{ brl(resultado_irpf.imposto_tabela) }}</span>
+            </li>
+            {% if resultado_irpf.reducao > 0 %}
+            <li class="list-group-item d-flex justify-content-between text-success">
+              <span>Redução (Lei 15.270/2025)</span>
+              <span>− {{ brl(resultado_irpf.reducao) }}</span>
+            </li>
+            {% endif %}
+            <li class="list-group-item d-flex justify-content-between fw-bold">
+              <span>Desconto estimado de IR</span>
+              <span class="text-danger">{{ brl(resultado_irpf.desconto) }}</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Alíquota efetiva</span>
+              <span>{{ "%.2f"|format(resultado_irpf.aliquota_efetiva) }}%</span>
+            </li>
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ---------- Rescisão / 13º ---------- #}
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm h-100 {% if aba == 'rescisao' %}border-success{% endif %}">
+      <div class="card-header bg-success text-white">
+        <i class="bi bi-briefcase"></i> Rescisão: 13º salário proporcional
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="tipo" value="rescisao">
+          <label for="salario_base" class="form-label">Salário base</label>
+          <div class="input-group mb-3">
+            <span class="input-group-text">R$</span>
+            <input name="salario_base" id="salario_base" class="form-control"
+                   inputmode="decimal" placeholder="Ex.: 3.200,00"
+                   value="{{ request.form['salario_base'] if aba == 'rescisao' }}" required>
+          </div>
+          <label for="meses" class="form-label">Meses trabalhados no ano</label>
+          <input type="number" name="meses" id="meses" class="form-control mb-1"
+                 min="0" max="12" step="1" placeholder="0 a 12"
+                 value="{{ request.form['meses'] if aba == 'rescisao' }}" required>
+          <div class="form-text mb-3">Fração de 15 dias ou mais conta como mês inteiro.</div>
+          <button class="btn btn-success w-100" type="submit">Calcular 13º</button>
+        </form>
+
+        {% if erro_13 %}
+          <div class="alert alert-danger mt-3 mb-0">{{ erro_13 }}</div>
+        {% endif %}
+
+        {% if resultado_13 %}
+          <ul class="list-group list-group-flush mt-3">
+            <li class="list-group-item d-flex justify-content-between">
+              <span>1/12 do salário</span>
+              <span>{{ brl(resultado_13.valor_mensal) }}</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Meses considerados</span>
+              <span>{{ resultado_13.meses }}/12</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between fw-bold">
+              <span>13º proporcional (bruto)</span>
+              <span class="text-success">{{ brl(resultado_13.decimo_terceiro) }}</span>
+            </li>
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="alert alert-secondary small mt-4 mb-0">
+  <i class="bi bi-info-circle"></i>
+  Valores aproximados, só para fins didáticos. O IRPF usa a tabela mensal vigente e o
+  desconto simplificado (R$ 607,20), sem INSS nem dependentes. O 13º é bruto, antes dos descontos.
+</div>
+{% endblock %}

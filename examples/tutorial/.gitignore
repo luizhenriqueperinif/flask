@@ -12,3 +12,8 @@ build/
 .idea/
 *.swp
 *~
+
+# arquivos enviados pelos usuários
+flaskr/static/uploads/*
+!flaskr/static/uploads/.gitkeep
+venv/

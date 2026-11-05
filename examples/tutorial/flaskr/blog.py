@@ -8,7 +8,11 @@ from flask import url_for
 from werkzeug.exceptions import abort
 
 from .auth import login_required
-from .db import get_db
+from .models import Post
+from .models import db
+from .uploads import UploadError
+from .uploads import delete_image
+from .uploads import save_image
 
 bp = Blueprint("blog", __name__)
 
@@ -16,42 +20,24 @@ bp = Blueprint("blog", __name__)
 @bp.route("/")
 def index():
     """Show all the posts, most recent first."""
-    db = get_db()
-    posts = db.execute(
-        "SELECT p.id, title, body, created, author_id, username"
-        " FROM post p JOIN user u ON p.author_id = u.id"
-        " ORDER BY created DESC"
-    ).fetchall()
+    posts = db.session.execute(
+        db.select(Post).order_by(Post.created.desc())
+    ).scalars().all()
     return render_template("blog/index.html", posts=posts)
 
 
 def get_post(id, check_author=True):
     """Get a post and its author by id.
 
-    Checks that the id exists and optionally that the current user is
-    the author.
-
-    :param id: id of post to get
-    :param check_author: require the current user to be the author
-    :return: the post with author information
     :raise 404: if a post with the given id doesn't exist
     :raise 403: if the current user isn't the author
     """
-    post = (
-        get_db()
-        .execute(
-            "SELECT p.id, title, body, created, author_id, username"
-            " FROM post p JOIN user u ON p.author_id = u.id"
-            " WHERE p.id = ?",
-            (id,),
-        )
-        .fetchone()
-    )
+    post = db.session.get(Post, id)
 
     if post is None:
-        abort(404, f"Post id {id} doesn't exist.")
+        abort(404, f"O post {id} não existe.")
 
-    if check_author and post["author_id"] != g.user["id"]:
+    if check_author and post.author_id != g.user.id:
         abort(403)
 
     return post
@@ -62,22 +48,27 @@ def get_post(id, check_author=True):
 def create():
     """Create a new post for the current user."""
     if request.method == "POST":
-        title = request.form["title"]
-        body = request.form["body"]
+        title = request.form.get("title", "").strip()
+        body = request.form.get("body", "")
         error = None
 
         if not title:
-            error = "Title is required."
+            error = "O título é obrigatório."
+
+        imagem = None
+        if error is None:
+            try:
+                imagem = save_image(request.files.get("imagem_post"))
+            except UploadError as e:
+                error = str(e)
 
         if error is not None:
-            flash(error)
+            flash(error, "danger")
         else:
-            db = get_db()
-            db.execute(
-                "INSERT INTO post (title, body, author_id) VALUES (?, ?, ?)",
-                (title, body, g.user["id"]),
-            )
-            db.commit()
+            post = Post(title=title, body=body, author=g.user, imagem_post=imagem)
+            db.session.add(post)
+            db.session.commit()
+            flash("Post publicado!", "success")
             return redirect(url_for("blog.index"))
 
     return render_template("blog/create.html")
@@ -90,21 +81,34 @@ def update(id):
     post = get_post(id)
 
     if request.method == "POST":
-        title = request.form["title"]
-        body = request.form["body"]
+        title = request.form.get("title", "").strip()
+        body = request.form.get("body", "")
         error = None
 
         if not title:
-            error = "Title is required."
+            error = "O título é obrigatório."
+
+        nova_imagem = None
+        if error is None:
+            try:
+                nova_imagem = save_image(request.files.get("imagem_post"))
+            except UploadError as e:
+                error = str(e)
 
         if error is not None:
-            flash(error)
+            flash(error, "danger")
         else:
-            db = get_db()
-            db.execute(
-                "UPDATE post SET title = ?, body = ? WHERE id = ?", (title, body, id)
-            )
-            db.commit()
+            post.title = title
+            post.body = body
+            if nova_imagem:
+                # substitui a imagem antiga
+                delete_image(post.imagem_post)
+                post.imagem_post = nova_imagem
+            elif request.form.get("remover_imagem"):
+                delete_image(post.imagem_post)
+                post.imagem_post = None
+            db.session.commit()
+            flash("Post atualizado!", "success")
             return redirect(url_for("blog.index"))
 
     return render_template("blog/update.html", post=post)
@@ -113,13 +117,10 @@ def update(id):
 @bp.route("/<int:id>/delete", methods=("POST",))
 @login_required
 def delete(id):
-    """Delete a post.
-
-    Ensures that the post exists and that the logged in user is the
-    author of the post.
-    """
-    get_post(id)
-    db = get_db()
-    db.execute("DELETE FROM post WHERE id = ?", (id,))
-    db.commit()
+    """Delete a post (and its image) if the current user is the author."""
+    post = get_post(id)
+    delete_image(post.imagem_post)
+    db.session.delete(post)
+    db.session.commit()
+    flash("Post excluído.", "info")
     return redirect(url_for("blog.index"))
